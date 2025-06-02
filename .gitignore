@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+.env
+instance/
+.pytest_cache/
+ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# Node (caso você tenha instalado algo no frontend)
+node_modules/
+
+# Arquivos de sistema do Windows
+Thumbs.db
+desktop.ini
+
+# Arquivos do OneDrive (se aplicável)
+~*
+*.lnk
+*.tmp
