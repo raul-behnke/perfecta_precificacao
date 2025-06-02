@@ -474,21 +474,20 @@
         if (!elemento.value || elemento.value.trim() === "") {
           alert(`Por favor, preencha o campo obrigatório: ${campo.label}.`);
           elemento.focus();
-          return; // Sai da função sem continuar para o fetch
+          return; // Sai da função sem continuar
         }
       }
 
-      // 2) Se passou na verificação, desabilita o botão e prossegue
+      // 2) Desabilita o botão e limpa o resultado anterior
       const btn = document.getElementById("btnCalcular");
       btn.disabled = true;
       btn.textContent = "Calculando...";
 
-      // 3) Limpa o resultado anterior
       const resultadoDiv = document.getElementById("valorResultado");
       resultadoDiv.className = "alert alert-secondary";
       resultadoDiv.textContent = "Calculando...";
 
-      // 4) Coleta valores (convertendo strings para números onde for necessário)
+      // 3) Coleta valores do formulário
       const consumo          = parseFloat(document.getElementById("consumo_medio_mensal").value);
       const potenciaModulos  = parseFloat(document.getElementById("potencia_modulos_w").value);
       const potenciaSistema  = parseFloat(document.getElementById("potencia_sistema_kw").value);
@@ -499,8 +498,7 @@
       const custoEstrutura   = parseFloat(document.getElementById("custo_estrutura").value) || 0;
       const custoCabos       = parseFloat(document.getElementById("custo_cabos").value) || 0;
 
-      // Aqui removemos a tentativa de ler ajuste_telhas e ajuste_padrao_entrada
-      // e já definimos 0 como valor padrão:
+      // Ajustes fixos a zero (já que não há input no HTML)
       const ajusteTelhas   = 0;
       const ajustePadrao   = 0;
 
@@ -515,43 +513,40 @@
       const indiceIrrad      = parseFloat(document.getElementById("indice_irrad").value) || 0;
       const taxaDesempenho   = (parseFloat(document.getElementById("taxa_desempenho").value) || 0) / 100;
 
-      // 5) Monta o objeto JSON conforme o modelo PropostaInput do backend
-      const payload = {
+      // 4) Monta o objeto para o cálculo no back-end
+      const payloadCalculo = {
         consumo_medio_mensal: consumo,
         potencia_modulos_w:   potenciaModulos,
         potencia_sistema_kw:  potenciaSistema,
-
         custo_unitario_modulo:    custoModulo,
         quantidade_inversor:      qtdInversor,
         custo_unitario_inversor:  custoInversor,
         custo_estrutura:          custoEstrutura,
         custo_cabos:              custoCabos,
-
-        ajuste_telhas:            ajusteTelhas,        // agora sempre 0
-        ajuste_padrao_entrada:    ajustePadrao,        // agora sempre 0
-
+        ajuste_telhas:            ajusteTelhas,
+        ajuste_padrao_entrada:    ajustePadrao,
         percentual_indiretos:     percIndiretos,
         percentual_margem:        percMargem,
         aliquota_impostos:        aliquotaImp,
-
         valor_adicional:          valorAdd,
         forma_desconto:           formaDesc,
         valor_desconto:           valorDesc,
-
         indice_irrad:             indiceIrrad,
         taxa_desempenho:          taxaDesempenho
       };
 
+      let valorFinal = 0;
+      let qtdModulosCalc = 0;
+
       try {
-        // 6) Faz o fetch ao endpoint /calcular
+        // 5) Chama o endpoint do back-end para calcular
         const resp = await fetch("http://127.0.0.1:8000/calcular", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payloadCalculo)
         });
 
         if (!resp.ok) {
-          // Caso de erro de validação (422) ou outro
           const erro = await resp.json();
           resultadoDiv.className = "alert alert-danger";
           resultadoDiv.textContent = "Erro: " + (erro.detail || resp.statusText);
@@ -560,23 +555,20 @@
           return;
         }
 
-        // 7) Se OK, processa o JSON retornado
         const data = await resp.json();
-        const valorFinal = data.valor_proposta;
+        valorFinal = data.valor_proposta;
 
-        // Exibe valor na aba "Resumo"
-        resultadoDiv.className = "alert alert-success";
-        resultadoDiv.textContent = `Valor da Proposta: R$ ${valorFinal.toFixed(2)}`;
-
-        // 8) Calcula a quantidade de módulos localmente, seguindo a mesma lógica do backend
+        // 6) Calcula localmente a quantidade de módulos (mesma lógica do back-end)
         if (consumo > 0 && potenciaModulos > 0 && indiceIrrad > 0 && taxaDesempenho > 0) {
           const geracaoDiaria   = consumo / 30.0;
           const geracaoPorModulo = (potenciaModulos / 1000.0) * indiceIrrad * taxaDesempenho;
-          const qtdModulosCalc = Math.ceil(geracaoDiaria / geracaoPorModulo);
+          qtdModulosCalc = Math.ceil(geracaoDiaria / geracaoPorModulo);
           document.getElementById("quantidade_modulos").value = qtdModulosCalc;
         }
 
-        // 9) Muda para a aba "Resumo" para o usuário ver o resultado
+        // 7) Exibe o resultado na aba "Resumo"
+        resultadoDiv.className = "alert alert-success";
+        resultadoDiv.textContent = `Valor da Proposta: R$ ${valorFinal.toFixed(2)}`;
         const tabResumo = new bootstrap.Tab(document.querySelector('#tab-resumo'));
         tabResumo.show();
       }
@@ -584,10 +576,60 @@
         console.error(err);
         resultadoDiv.className = "alert alert-danger";
         resultadoDiv.textContent = "Não foi possível conectar ao servidor.";
+        btn.disabled = false;
+        btn.textContent = "Calcular Preço Final";
+        return;
       }
       finally {
         btn.disabled = false;
         btn.textContent = "Calcular Preço Final";
+      }
+
+      // 8) Agora, precisamos obter a URL do webhook via GET /config
+      let webhookUrl = "";
+      try {
+        const respConfig = await fetch("http://127.0.0.1:8000/config");
+        if (respConfig.ok) {
+          const cfg = await respConfig.json();
+          webhookUrl = cfg.webhook_url;
+        } else {
+          console.warn("Falha ao obter config do servidor:", respConfig.status);
+        }
+      }
+      catch (err) {
+        console.error("Erro ao buscar /config:", err);
+      }
+
+      // 9) Se obtivemos a URL, enviamos o payload resumido para o LeadConnectorHQ
+      if (webhookUrl) {
+        const payloadWebhook = {
+          deal_id: "COLE_AQUI_SEU_DEAL_ID",       // substitua pelo ID real no GHL
+          contact_id: "COLE_AQUI_SEU_CONTACT_ID", // substitua pelo ID real no GHL
+          valor_proposta: valorFinal,
+          quantidade_modulos: qtdModulosCalc,
+          outros_campos: {
+            cidade: document.getElementById("cidade_cliente").value || "",
+            consumo: consumo
+          }
+        };
+
+        // Dispara o POST ao LeadConnectorHQ
+        try {
+          const respHook = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payloadWebhook)
+          });
+          if (!respHook.ok) {
+            console.warn("Webhook retornou status", respHook.status);
+          }
+        }
+        catch (err) {
+          console.error("Falha ao enviar webhook externo:", err);
+        }
+      }
+      else {
+        console.warn("WEBHOOK_URL não definido; não enviando dados ao LeadConnectorHQ.");
       }
     });
 
