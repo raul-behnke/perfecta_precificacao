@@ -458,190 +458,274 @@
   <!-- ======================
        Script de Lógica e Fetch
        ====================== -->
-  <script>
+    <script>
     document.getElementById("btnCalcular").addEventListener("click", async () => {
-      // 1) Verificação de campos obrigatórios
-      const obrigatorios = [
-        { id: "consumo_medio_mensal",  label: "Consumo Médio Mensal" },
-        { id: "indice_irrad",          label: "Índice de Irradiação" },
-        { id: "taxa_desempenho",       label: "Taxa de Desempenho" },
-        { id: "potencia_modulos_w",    label: "Potência dos Módulos" },
-        { id: "potencia_sistema_kw",   label: "Potência do Sistema" }
-      ];
+        // 1) Validação de campos obrigatórios (já estava)
+        const obrigatorios = [
+        { id: "nome_cliente",            label: "Nome do Cliente" },
+        { id: "telefone_cliente",        label: "Telefone do Cliente" },
+        { id: "cidade_cliente",          label: "Cidade do Cliente" },
+        { id: "consumo_medio_mensal",    label: "Consumo Médio Mensal" },
+        { id: "indice_irrad",            label: "Índice de Irradiação" },
+        { id: "taxa_desempenho",         label: "Taxa de Desempenho" },
+        { id: "potencia_modulos_w",      label: "Potência dos Módulos" },
+        { id: "potencia_sistema_kw",     label: "Potência do Sistema" }
+        // adicione outros campos como quiser tornar obrigatórios
+        ];
 
-      for (let campo of obrigatorios) {
+        for (let campo of obrigatorios) {
         const elemento = document.getElementById(campo.id);
         if (!elemento.value || elemento.value.trim() === "") {
-          alert(`Por favor, preencha o campo obrigatório: ${campo.label}.`);
-          elemento.focus();
-          return; // Sai da função sem continuar
+            alert(`Por favor, preencha o campo obrigatório: ${campo.label}.`);
+            elemento.focus();
+            return;
         }
-      }
+        }
 
-      // 2) Desabilita o botão e limpa o resultado anterior
-      const btn = document.getElementById("btnCalcular");
-      btn.disabled = true;
-      btn.textContent = "Calculando...";
+        // 2) Desabilita botão e mostra "Calculando..."
+        const btn = document.getElementById("btnCalcular");
+        btn.disabled = true;
+        btn.textContent = "Calculando...";
 
-      const resultadoDiv = document.getElementById("valorResultado");
-      resultadoDiv.className = "alert alert-secondary";
-      resultadoDiv.textContent = "Calculando...";
+        const resultadoDiv = document.getElementById("valorResultado");
+        resultadoDiv.className = "alert alert-secondary";
+        resultadoDiv.textContent = "Calculando...";
 
-      // 3) Coleta valores do formulário
-      const consumo          = parseFloat(document.getElementById("consumo_medio_mensal").value);
-      const potenciaModulos  = parseFloat(document.getElementById("potencia_modulos_w").value);
-      const potenciaSistema  = parseFloat(document.getElementById("potencia_sistema_kw").value);
+        // 3) Coleta valores de TODOS os campos de entrada:
 
-      const custoModulo      = parseFloat(document.getElementById("custo_unitario_modulo").value) || 0;
-      const qtdInversor      = parseInt  (document.getElementById("quantidade_inversor").value) || 0;
-      const custoInversor    = parseFloat(document.getElementById("custo_unitario_inversor").value) || 0;
-      const custoEstrutura   = parseFloat(document.getElementById("custo_estrutura").value) || 0;
-      const custoCabos       = parseFloat(document.getElementById("custo_cabos").value) || 0;
+        // --- Dados do Cliente ---
+        const nomeCliente       = document.getElementById("nome_cliente").value.trim();
+        const telefoneCliente   = document.getElementById("telefone_cliente").value.trim();
+        const origemContato     = document.getElementById("origem_contato").value;
+        const cidadeCliente     = document.getElementById("cidade_cliente").value.trim();
+        const cpfCliente        = document.getElementById("cpf_cliente").value.trim();
+        const enderecoCliente   = document.getElementById("endereco_cliente").value.trim();
 
-      // Ajustes fixos a zero (já que não há input no HTML)
-      const ajusteTelhas   = 0;
-      const ajustePadrao   = 0;
+        // --- Dados do Negócio ---
+        const tituloNegocio     = document.getElementById("titulo_negocio").value.trim();
+        const consultorNegocio  = document.getElementById("consultor_negocio").value.trim();
+        // Para anexo de fatura: podemos pegar só o nome do arquivo (se já tiver selecionado)
+        const anexoFaturaInput  = document.getElementById("anexo_fatura");
+        const anexoFaturaNome   = anexoFaturaInput.files.length > 0 
+                                ? anexoFaturaInput.files[0].name 
+                                : "";
+        const concessionaria    = document.getElementById("concessionaria").value;
 
-      const percIndiretos    = (parseFloat(document.getElementById("percentual_indiretos").value) || 0) / 100;
-      const percMargem       = (parseFloat(document.getElementById("percentual_margem").value) || 0) / 100;
-      const aliquotaImp      = (parseFloat(document.getElementById("aliquota_impostos").value) || 0) / 100;
-      const valorAdd         = parseFloat(document.getElementById("valor_adicional").value) || 0;
+        // --- Dados de Consumo ---
+        const consumo           = parseFloat(document.getElementById("consumo_medio_mensal").value);
+        const taxaSimult        = parseFloat(document.getElementById("taxa_simultaneidade").value) || 0;
+        const indiceIrrad       = parseFloat(document.getElementById("indice_irrad").value);
+        const taxaDesempenho    = parseFloat(document.getElementById("taxa_desempenho").value) / 100;
 
-      const formaDesc        = document.getElementById("forma_desconto").value;
-      const valorDesc        = parseFloat(document.getElementById("valor_desconto").value) || 0;
+        // --- Configuração de Equipamentos ---
+        const potenciaModulos   = parseFloat(document.getElementById("potencia_modulos_w").value);
+        const potenciaSistema   = parseFloat(document.getElementById("potencia_sistema_kw").value);
 
-      const indiceIrrad      = parseFloat(document.getElementById("indice_irrad").value) || 0;
-      const taxaDesempenho   = (parseFloat(document.getElementById("taxa_desempenho").value) || 0) / 100;
+        // Quantidade de módulos será preenchido depois do cálculo, mas vamos declarar:
+        let qtdModulosCalc = 0;
 
-      // 4) Monta o objeto para o cálculo no back-end
-      const payloadCalculo = {
+        const custoModulo       = parseFloat(document.getElementById("custo_unitario_modulo").value) || 0;
+        const qtdInversor       = parseInt(document.getElementById("quantidade_inversor").value) || 0;
+        const custoInversor     = parseFloat(document.getElementById("custo_unitario_inversor").value) || 0;
+        const custoEstrutura    = parseFloat(document.getElementById("custo_estrutura").value) || 0;
+        const custoCabos        = parseFloat(document.getElementById("custo_cabos").value) || 0;
+
+        // --- Dados Comerciais / Financeiros ---
+        const custoBaseKw       = parseFloat(document.getElementById("custo_base_por_kw").value) || 0;
+        const percIndiretos     = (parseFloat(document.getElementById("percentual_indiretos").value) || 0) / 100;
+        const percMargem        = (parseFloat(document.getElementById("percentual_margem").value) || 0) / 100;
+        const aliquotaImp       = (parseFloat(document.getElementById("aliquota_impostos").value) || 0) / 100;
+        const valorAdicional    = parseFloat(document.getElementById("valor_adicional").value) || 0;
+        const formaDesconto     = document.getElementById("forma_desconto").value;
+        const valorDesconto     = parseFloat(document.getElementById("valor_desconto").value) || 0;
+
+        // --- Observações Gerais ---
+        const observacoesGerais = document.getElementById("observacoes_gerais").value.trim();
+
+
+        // 4) Monta o payload de cálculo (para o endpoint /calcular)
+        const payloadCalculo = {
         consumo_medio_mensal: consumo,
         potencia_modulos_w:   potenciaModulos,
         potencia_sistema_kw:  potenciaSistema,
+
         custo_unitario_modulo:    custoModulo,
         quantidade_inversor:      qtdInversor,
         custo_unitario_inversor:  custoInversor,
         custo_estrutura:          custoEstrutura,
         custo_cabos:              custoCabos,
-        ajuste_telhas:            ajusteTelhas,
-        ajuste_padrao_entrada:    ajustePadrao,
+
+        // Se você quiser calcular automaticamente ajustes, deixe 0 por enquanto:
+        ajuste_telhas:            0,
+        ajuste_padrao_entrada:    0,
+
         percentual_indiretos:     percIndiretos,
         percentual_margem:        percMargem,
         aliquota_impostos:        aliquotaImp,
-        valor_adicional:          valorAdd,
-        forma_desconto:           formaDesc,
-        valor_desconto:           valorDesc,
+
+        valor_adicional:          valorAdicional,
+        forma_desconto:           formaDesconto,
+        valor_desconto:           valorDesconto,
+
         indice_irrad:             indiceIrrad,
         taxa_desempenho:          taxaDesempenho
-      };
+        };
 
-      let valorFinal = 0;
-      let qtdModulosCalc = 0;
-
-      try {
-        // 5) Chama o endpoint do back-end para calcular
-        const resp = await fetch("http://127.0.0.1:8000/calcular", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payloadCalculo)
+        let valorFinal = 0;
+        try {
+        // 5) Chama o backend para calcular o valor da proposta
+        const respCalc = await fetch("http://127.0.0.1:8000/calcular", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payloadCalculo)
         });
 
-        if (!resp.ok) {
-          const erro = await resp.json();
-          resultadoDiv.className = "alert alert-danger";
-          resultadoDiv.textContent = "Erro: " + (erro.detail || resp.statusText);
-          btn.disabled = false;
-          btn.textContent = "Calcular Preço Final";
-          return;
+        if (!respCalc.ok) {
+            const erro = await respCalc.json();
+            resultadoDiv.className = "alert alert-danger";
+            resultadoDiv.textContent = "Erro: " + (erro.detail || respCalc.statusText);
+            btn.disabled = false;
+            btn.textContent = "Calcular Preço Final";
+            return;
         }
 
-        const data = await resp.json();
-        valorFinal = data.valor_proposta;
+        const dataCalc = await respCalc.json();
+        valorFinal = dataCalc.valor_proposta;
 
-        // 6) Calcula localmente a quantidade de módulos (mesma lógica do back-end)
+        // 6) Calcula localmente a quantidade de módulos
         if (consumo > 0 && potenciaModulos > 0 && indiceIrrad > 0 && taxaDesempenho > 0) {
-          const geracaoDiaria   = consumo / 30.0;
-          const geracaoPorModulo = (potenciaModulos / 1000.0) * indiceIrrad * taxaDesempenho;
-          qtdModulosCalc = Math.ceil(geracaoDiaria / geracaoPorModulo);
-          document.getElementById("quantidade_modulos").value = qtdModulosCalc;
+            const geracaoDiaria   = consumo / 30.0;
+            const geracaoPorModulo = (potenciaModulos / 1000.0) * indiceIrrad * taxaDesempenho;
+            qtdModulosCalc = Math.ceil(geracaoDiaria / geracaoPorModulo);
+            document.getElementById("quantidade_modulos").value = qtdModulosCalc;
         }
 
-        // 7) Exibe o resultado na aba "Resumo"
+        // 7) Exibe o valor na aba “Resumo”
         resultadoDiv.className = "alert alert-success";
         resultadoDiv.textContent = `Valor da Proposta: R$ ${valorFinal.toFixed(2)}`;
         const tabResumo = new bootstrap.Tab(document.querySelector('#tab-resumo'));
         tabResumo.show();
-      }
-      catch (err) {
+        }
+        catch (err) {
         console.error(err);
         resultadoDiv.className = "alert alert-danger";
         resultadoDiv.textContent = "Não foi possível conectar ao servidor.";
         btn.disabled = false;
         btn.textContent = "Calcular Preço Final";
         return;
-      }
-      finally {
+        }
+        finally {
         btn.disabled = false;
         btn.textContent = "Calcular Preço Final";
-      }
+        }
 
-      // 8) Agora, precisamos obter a URL do webhook via GET /config
-      let webhookUrl = "";
-      try {
+        // 8) Obter o URL do webhook via GET /config
+        let webhookUrl = "";
+        try {
         const respConfig = await fetch("http://127.0.0.1:8000/config");
         if (respConfig.ok) {
-          const cfg = await respConfig.json();
-          webhookUrl = cfg.webhook_url;
+            const cfg = await respConfig.json();
+            webhookUrl = cfg.webhook_url;
         } else {
-          console.warn("Falha ao obter config do servidor:", respConfig.status);
+            console.warn("Falha ao obter config do servidor:", respConfig.status);
         }
-      }
-      catch (err) {
+        }
+        catch (err) {
         console.error("Erro ao buscar /config:", err);
-      }
+        }
 
-      // 9) Se obtivemos a URL, enviamos o payload resumido para o LeadConnectorHQ
-      if (webhookUrl) {
+        // 9) Montar o payload completo com todas as informações de formulário
+        if (webhookUrl) {
         const payloadWebhook = {
-          deal_id: "COLE_AQUI_SEU_DEAL_ID",       // substitua pelo ID real no GHL
-          contact_id: "COLE_AQUI_SEU_CONTACT_ID", // substitua pelo ID real no GHL
-          valor_proposta: valorFinal,
-          quantidade_modulos: qtdModulosCalc,
-          outros_campos: {
-            cidade: document.getElementById("cidade_cliente").value || "",
-            consumo: consumo
-          }
+            // (deal_id e contact_id deixamos em branco por enquanto)
+            deal_id: "",
+            contact_id: "",
+
+            valor_proposta: valorFinal,
+            quantidade_modulos: qtdModulosCalc,
+
+            // Envia todos os campos do Cliente:
+            cliente: {
+            nome: nomeCliente,
+            telefone: telefoneCliente,
+            origem: origemContato,
+            cidade: cidadeCliente,
+            cpf: cpfCliente,
+            endereco: enderecoCliente
+            },
+
+            // Envia todos os campos do Negócio:
+            negocio: {
+            titulo: tituloNegocio,
+            consultor: consultorNegocio,
+            anexo_fatura: anexoFaturaNome,
+            concessionaria: concessionaria
+            },
+
+            // Envia todos os campos de Consumo:
+            consumo: {
+            consumo_medio_mensal: consumo,
+            taxa_simultaneidade: taxaSimult,
+            indice_irrad: indiceIrrad,
+            taxa_desempenho: parseFloat((taxaDesempenho * 100).toFixed(2)) // em %
+            },
+
+            // Envia todos os campos de Equipamentos:
+            equipamentos: {
+            potencia_modulos_w: potenciaModulos,
+            potencia_sistema_kw: potenciaSistema,
+            quantidade_modulos: qtdModulosCalc,
+            custo_unitario_modulo: custoModulo,
+            quantidade_inversor: qtdInversor,
+            custo_unitario_inversor: custoInversor,
+            custo_estrutura: custoEstrutura,
+            custo_cabos: custoCabos
+            },
+
+            // Envia todos os campos Comerciais / Financeiros:
+            comercial: {
+            custo_base_por_kw: custoBaseKw,
+            percentual_indiretos: parseFloat((percIndiretos * 100).toFixed(2)), // em %
+            percentual_margem: parseFloat((percMargem * 100).toFixed(2)),       // em %
+            aliquota_impostos: parseFloat((aliquotaImp * 100).toFixed(2)),       // em %
+            valor_adicional: valorAdicional,
+            forma_desconto: formaDesconto,
+            valor_desconto: valorDesconto
+            },
+
+            // Envia Observações Gerais:
+            observacoes_gerais: observacoesGerais
         };
 
-        // Dispara o POST ao LeadConnectorHQ
+        // 10) Dispara o POST ao webhook externo (LeadConnectorHQ)
         try {
-          const respHook = await fetch(webhookUrl, {
+            const respHook = await fetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payloadWebhook)
-          });
-          if (!respHook.ok) {
+            });
+            if (!respHook.ok) {
             console.warn("Webhook retornou status", respHook.status);
-          }
+            }
         }
         catch (err) {
-          console.error("Falha ao enviar webhook externo:", err);
+            console.error("Falha ao enviar webhook externo:", err);
         }
-      }
-      else {
+        }
+        else {
         console.warn("WEBHOOK_URL não definido; não enviando dados ao LeadConnectorHQ.");
-      }
+        }
     });
 
-    // Botão "Gerar PDF" (ainda sem implementação real)
+    // Botão “Gerar PDF”
     document.getElementById("btnGerarPDF").addEventListener("click", () => {
-      alert("Funcionalidade de gerar PDF ainda não implementada.");
+        alert("Funcionalidade de gerar PDF ainda não implementada.");
     });
 
-    // Botão "Salvar Rascunho" (ainda sem implementação real)
+    // Botão “Salvar Rascunho”
     document.getElementById("btnSalvar").addEventListener("click", () => {
-      alert("Salvar rascunho ainda não implementado.");
+        alert("Salvar rascunho ainda não implementado.");
     });
-  </script>
+    </script>
 </body>
 </html>
